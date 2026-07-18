@@ -66,6 +66,29 @@ WRTDS_Pin<-modelEstimation(ELIST_Pin, windowY = 100, windowQ = 2, windowS = 0.5,
 ELIST_Pout<-mergeReport(INFO_TPout,Qout_WRTDS,TPoutwrtds)
 WRTDS_Pout<-modelEstimation(ELIST_Pout, windowY = 100, windowQ = 2, windowS = 0.5, minNumObs
                            = 30, minNumUncen =20, edgeAdjust = TRUE)
+#NSE
+Sample<-getSample(ELIST_Pin) ##replace sample with each ELIST and run or loop
+CrossV<-estCrossVal(2008,2011,Sample,windowY = 100, windowQ = 2, windowS = 0.5, minNumObs
+                        = 30, minNumUncen =20, edgeAdjust = TRUE)
+observed <- CrossV$ConcAve
+modeled <- CrossV$ConcHat
+# Calculate the mean of the observed values
+mean_observed <- mean(observed)
+# Calculate the numerator (sum of squared differences)
+numerator <- sum((observed - modeled)^2)
+# Calculate the denominator (sum of squared differences from the mean of observed values)
+denominator <- sum((observed - mean_observed)^2)
+# Calculate Nash-Sutcliffe Efficiency
+NSE <- 1 - (numerator / denominator)
+# Print the result
+print(paste("Nash-Sutcliffe Efficiency (NSE):", round(NSE, 4)))
+
+#RMSE and FBS
+flux_error<-errorStats(WRTDS_Pout) 
+flux_error<-errorStats(WRTDS_Nout) 
+flux_error<-errorStats(WRTDS_Pin) 
+flux_error<-errorStats(WRTDS_Nin) 
+
 #Y-window =7 for Long term sites, set minobs proportonal to length of dataset and # of samples, values here used for short term (3 years) sites
 #kalman filter and bootstrap
 WRTDS_K_Pin <- WRTDSKalman(WRTDS_Pin)
@@ -394,3 +417,4 @@ result_df <- result_df %>%
 getwd()
 setwd("D:/")
 write.csv(result_df,"CumulativeFlowStats.csv")
+
