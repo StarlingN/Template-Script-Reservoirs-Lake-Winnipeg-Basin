@@ -418,3 +418,217 @@ getwd()
 setwd("D:/")
 write.csv(result_df,"CumulativeFlowStats.csv")
 
+#once all sites are run via Cummulative Flow Stats are in one excel file
+library(readr)
+library(tidyverse)
+library(patchwork)
+
+FlowStats <- read_csv("path to CumulativeFlowStats.csv")
+FlowStats<- FlowStats %>%
+  rename(
+    intensity = m_days
+  )
+
+P<-FlowStats%>%
+  filter(!is.na(Pret))
+
+N<-FlowStats%>%
+  filter(!is.na(Nret))
+
+P <- P %>%
+  group_by(site) %>%
+  mutate(
+    volume = case_when(
+      V50 >= quantile(V50, 0.75, na.rm = TRUE) ~ "P75",
+      V50 <= quantile(V50, 0.25, na.rm = TRUE) ~ "P25",
+      TRUE                                     ~ "P5"
+    )
+  ) %>%
+  ungroup()
+
+N <- N %>%
+  group_by(site) %>%
+  mutate(
+    volume = case_when(
+      V50 >= quantile(V50, 0.75, na.rm = TRUE) ~ "P75",
+      V50 <= quantile(V50, 0.25, na.rm = TRUE) ~ "P25",
+      TRUE                                     ~ "P5"
+    )
+  ) %>%
+  ungroup()
+
+
+Pintensity<-P%>%
+  ggplot(aes(intensity,Pret,colour=site))+
+  geom_point()+
+  geom_smooth(method=lm,se=FALSE)+
+  theme_bw()+
+  ggtitle("hydrological intensity")+
+  ylim(-100, 100)+
+  theme(legend.position = "none")+
+  ylab("REF TP (%)")
+
+Nintensity<-N%>%
+  ggplot(aes(intensity,Nret,colour=site))+
+  geom_point()+
+  geom_smooth(method=lm,se=FALSE)+
+  theme_bw()+
+  ggtitle("hydrological intensity")+
+  ylim(-100, 100)+
+  theme(legend.position = "none")+
+  ylab("REF TN (%)")
+
+Ptiming<-P%>%
+  ggplot(aes(timing,Pret,colour=site))+
+  geom_point()+
+  geom_smooth(method=lm,se=FALSE)+
+  theme_bw()+
+  ggtitle("hydrological timing")+
+  ylim(-100, 100)+
+  theme(legend.position = "none")+
+  ylab("REF TP (%)")
+
+Ntiming<-N%>%
+  ggplot(aes(timing,Nret,colour=site))+
+  geom_point()+
+  geom_smooth(method=lm,se=FALSE)+
+  ggtitle("hydrological timing")+
+  theme_bw()+
+  ylim(-100, 100)+
+  theme(legend.position = "none")+
+  ylab("REF TN (%)")
+
+Nvolume<-N%>%
+  ggplot(aes(volume,Nret,fill=site))+
+  geom_boxplot()+
+  ggtitle("relative volume of annual flows")+
+  theme_bw()+
+  ylim(-100,100)+
+  ylab("REF TN (%)")
+
+Nvolume
+Pvolume<-P%>%
+  ggplot(aes(volume,Pret,fill=site))+
+  geom_boxplot()+
+  ggtitle("relative volume of annual flows")+
+  theme_bw()+
+  ylim(-100,100)+
+  ylab("REF TP (%)")
+
+Pintensity+Ptiming+Nintensity+Ntiming
+
+Pintensity+Ptiming+Pvolume+Nintensity+Ntiming+Nvolume
+
+resultsP<-P%>%
+  group_by(site)%>%
+  nest()%>%
+  mutate(
+    model=map(data,~lm(Pret~timing+intensity+volume,data=.))
+  )
+
+coef_dfP <- resultsP %>%
+  mutate(tidy_model = map(model, broom::tidy)) %>%  # extract coefficients
+  unnest(tidy_model) %>%
+  select(site, term, estimate) %>%
+  mutate(term = recode(term,
+                       "(Intercept)" = "intercept",
+                       "timing" = "timing",
+                       "intensity" = "intensity",
+                       "volume" = "volume")) %>%
+  pivot_wider(names_from = term, values_from = estimate)
+
+coef_dfP
+#ANOVA
+resultsP <- P %>%
+  group_by(site) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(Pret ~ timing + intensity+volume, data = .)),
+    anova_tbl = map(model, ~ anova(.x) %>% broom::tidy()),
+  ) %>%
+  unnest(anova_tbl) %>%
+  group_by(site) %>%
+  mutate(
+    prop_var = sumsq / sum(sumsq)   # proportion variance explained
+  ) %>%
+  ungroup()
+
+# 2. Site-level summary across all sites
+summary_across_sitesP <- resultsP %>%
+  #  filter(term != "Residuals") %>%
+  group_by(term) %>%
+  summarise(
+    mean_prop = mean(prop_var, na.rm = TRUE),
+    sd_prop   = sd(prop_var, na.rm = TRUE),
+    mean_F    = mean(statistic, na.rm = TRUE),
+    mean_p    = mean(p.value, na.rm = TRUE),
+    n_sites   = n_distinct(site),
+    .groups = "drop"
+  )
+
+Pres_exp<-data.frame(site=resultsP$site,
+                     factor=resultsP$term,
+                     p_value=resultsP$p.value,
+                     prop_var=resultsP$prop_var)
+view(Pres_exp)
+getwd()
+setwd("D:/MS1scripts/results")
+write.csv(Pres_exp,"anova+bydro_wvol_P.csv")
+
+#ANOVA N
+
+resultsN<-N%>%
+  group_by(site)%>%
+  nest()%>%
+  mutate(
+    model=map(data,~lm(Nret~timing+intensity+volume,data=.))
+  )
+
+coef_dfN <- resultsN %>%
+  mutate(tidy_model = map(model, broom::tidy)) %>%  # extract coefficients
+  unnest(tidy_model) %>%
+  select(site, term, estimate) %>%
+  mutate(term = recode(term,
+                       "(Intercept)" = "intercept",
+                       "timing" = "timing",
+                       "intensity" = "intensity",
+                       "volume" = "volume")) %>%
+  pivot_wider(names_from = term, values_from = estimate)
+
+coef_dfN
+#ANOVA
+resultsN <- N %>%
+  group_by(site) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(Nret~ timing + intensity+volume, data = .)),
+    anova_tbl = map(model, ~ anova(.x) %>% broom::tidy()),
+  ) %>%
+  unnest(anova_tbl) %>%
+  group_by(site) %>%
+  mutate(
+    prop_var = sumsq / sum(sumsq)   # proportion variance explained
+  ) %>%
+  ungroup()
+
+Nres_exp<-data.frame(site=resultsN$site,
+                     factor=resultsN$term,
+                     p_value=resultsN$p.value,
+                     prop_var=resultsN$prop_var)
+view(Nres_exp)
+getwd()
+setwd("D:/MS1scripts/results")
+write.csv(Nres_exp,"anova+bydro_wvol_N.csv")
+
+# 2. Site-level summary across all sites
+summary_across_sitesN <- resultsN %>%
+  #  filter(term != "Residuals") %>%
+  group_by(term) %>%
+  summarise(
+    mean_prop = mean(prop_var, na.rm = TRUE),
+    sd_prop   = sd(prop_var, na.rm = TRUE),
+    mean_F    = mean(statistic, na.rm = TRUE),
+    mean_p    = mean(p.value, na.rm = TRUE),
+    n_sites   = n_distinct(site),
+    .groups = "drop"
+  )
